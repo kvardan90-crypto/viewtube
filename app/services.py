@@ -15,11 +15,14 @@ def session():
         yield db
 
 
-Db = Annotated[DbSession, Depends(session)]
+Db = Annotated[DbSession, Depends(session, scope="function")]
 
 
-def viewer(request: Request, db: Db):
-    return current_user(db, request.cookies.get(COOKIE))
+def viewer(request: Request):
+    token = request.cookies.get(COOKIE)
+    if token:
+        with Session() as db:
+            return current_user(db, token)
 
 
 Viewer = Annotated[User | None, Depends(viewer)]

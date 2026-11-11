@@ -9,9 +9,6 @@ from .services import Actor, Db, Staff, commit, find_user, get_video, set_relati
 
 
 router = APIRouter(prefix="/api")
-Handle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=32)]
-
-
 class Access(BaseModel):
     enabled: bool
 

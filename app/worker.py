@@ -15,6 +15,7 @@ from .db import Session, Video, new_id, now
 
 log = logging.getLogger(__name__)
 LEASE = timedelta(minutes=45)
+FORMATS = "mov,matroska,webm,avi,mpeg,mpegts,flv"
 
 
 def claim():
@@ -41,7 +42,8 @@ def run(command, timeout):
 
 
 def duration(path):
-    value = float(run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+    value = float(run(["ffprobe", "-v", "error", "-protocol_whitelist", "file",
+                       "-format_whitelist", FORMATS, "-show_entries", "format=duration",
                        "-of", "default=noprint_wrappers=1:nokey=1", str(path)], 15))
     if not math.isfinite(value) or not 0 < value <= 3600:
         raise ValueError("Invalid video duration")
@@ -51,10 +53,11 @@ def duration(path):
 def convert(source, media, poster):
     length = duration(source)
     run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror", "-y",
-         "-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm,avi,mpeg,mpegts,flv",
+         "-protocol_whitelist", "file", "-format_whitelist", FORMATS,
          "-i", str(source), "-map", "0:V:0", "-map", "0:a:0?", "-sn", "-dn",
-         "-vf", "fps=30,scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+         "-vf", "fps=30,scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
          "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-pix_fmt", "yuv420p",
+         "-maxrate", "2200k", "-bufsize", "4400k", "-b:a", "128k",
          "-c:a", "aac", "-ac", "2", "-movflags", "+faststart", "-t", "3600", str(media)], 1500)
     run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
          "-ss", str(min(length / 3, 3)), "-i", str(media), "-frames:v", "1",

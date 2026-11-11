@@ -15,7 +15,11 @@ LOCAL = Path(os.environ["LOCAL_STORAGE"]) if os.getenv("LOCAL_STORAGE") else Non
 def client():
     return boto3.client(
         "s3", endpoint_url=os.getenv("S3_ENDPOINT"),
-        region_name="us-east-1", config=Config(s3={"addressing_style": "path"}),
+        region_name="us-east-1", config=Config(
+            s3={"addressing_style": "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 

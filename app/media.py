@@ -5,11 +5,10 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
 from . import storage
-from .db import Grant, Session, Video, new_id
+from .db import Session, Video, new_id
 from .services import Actor, get_video
 
 
@@ -79,8 +78,10 @@ def bounds(header, size):
     return start, end
 
 
-@router.api_route("/videos/{video_id}/media", methods=["GET", "HEAD"])
-@router.api_route("/videos/{video_id}/poster", methods=["GET", "HEAD"])
+@router.head("/videos/{video_id}/media", include_in_schema=False)
+@router.head("/videos/{video_id}/poster", include_in_schema=False)
+@router.get("/videos/{video_id}/media", response_class=Response)
+@router.get("/videos/{video_id}/poster", response_class=Response)
 def serve_media(video_id: str, request: Request, ctx=Depends(get_video)):
     video = ctx.video
     poster = request.url.path.endswith("/poster")
