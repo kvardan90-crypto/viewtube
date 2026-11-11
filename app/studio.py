@@ -9,6 +9,8 @@ from .services import Actor, Db, Staff, commit, find_user, get_video, set_relati
 
 
 router = APIRouter(prefix="/api")
+
+
 class Access(BaseModel):
     enabled: bool
 
@@ -38,6 +40,18 @@ def owned(db, user, video_id):
     if not video or video.owner_id != user.id:
         raise HTTPException(404, "Видео не найдено")
     return video
+
+
+@router.post("/videos/{video_id}/retry", status_code=202)
+def retry_video(video_id: str, db: Db, user: Actor):
+    owned(db, user, video_id)
+    updated = db.execute(update(Video).where(
+        Video.id == video_id, Video.owner_id == user.id, Video.state == "failed",
+    ).values(state="queued", started=None, attempt=None))
+    if not updated.rowcount:
+        raise HTTPException(409, "Повтор доступен после ошибки обработки")
+    db.commit()
+    return {"id": video_id, "state": "queued"}
 
 
 @router.patch("/videos/{video_id}/visibility")

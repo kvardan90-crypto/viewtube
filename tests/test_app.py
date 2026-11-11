@@ -4,9 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db import Session, User, Video
+from app import storage
+from app.db import Session, User, Video, now
 from app.main import app
-from app.worker import claim, process, run
+from app.worker import LEASE, claim, finish, output_keys, process, run
 
 
 PASSWORD = "correct-horse-staple"
@@ -66,7 +67,7 @@ def test_register_upload_play_like_comment(client, source):
     process_next()
     detail = client.get(url).json()
     assert detail["state"] == "ready"
-    assert client.get("/api/videos", params={"q": "Первое"}).json()[0]["id"] == detail["id"]
+    assert client.get("/api/videos", params={"q": "первое"}).json()[0]["id"] == detail["id"]
     assert client.get("/api/videos", params={"q": "Нет совпадения"}).json() == []
     media = client.get(url + "/media")
     assert media.status_code == 200
@@ -77,7 +78,12 @@ def test_register_upload_play_like_comment(client, source):
     assert ranged.content == media.content[5:16]
     assert ranged.headers["content-range"] == f"bytes 5-15/{len(media.content)}"
     assert client.get(url + "/media", headers={"Range": "bytes=-7"}).content == media.content[-7:]
-    assert client.get(url + "/media", headers={"Range": "bytes=99999999-"}).status_code == 416
+    unsatisfiable = client.get(url + "/media", headers={"Range": "bytes=99999999-"})
+    assert unsatisfiable.status_code == 416
+    assert unsatisfiable.headers["content-range"] == f"bytes */{len(media.content)}"
+    outdated = client.get(url + "/media", headers={"Range": "bytes=5-15", "If-Range": '"outdated"'})
+    assert outdated.status_code == 200
+    assert outdated.content == media.content
     assert client.get(url + "/poster").content.startswith(b"\xff\xd8")
     assert client.post(url + "/view").status_code == 200
     assert client.get(url).json()["views"] == 1
@@ -152,6 +158,8 @@ def test_invalid_upload_and_cross_origin(client):
     register(client, "creator")
     assert client.post("/api/logout", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
     assert client.post("/api/videos?title=test", content=b"").status_code == 422
+    assert client.post("/api/videos?title=test", content=b"a", headers={"Content-Length": "invalid"}).status_code == 400
+    assert client.post("/api/videos?title=test", content=b"a", headers={"Content-Length": "5"}).status_code == 400
     assert client.post("/api/videos?title=test", content=b"a", headers={"Content-Length": "300000000"}).status_code == 413
     url = upload(client, b"not a video")
     process_next()
@@ -159,3 +167,68 @@ def test_invalid_upload_and_cross_origin(client):
     assert client.get(url + "/media").status_code == 404
     with Session() as db:
         assert db.scalar(select(Video)).media is None
+
+
+def test_failed_upload_owner_retry_keeps_original_and_removes_partial_outputs(client, source, monkeypatch):
+    register(client, "owner")
+    url = upload(client, source, "private")
+    assert client.post(url + "/retry").status_code == 409
+    first_job = claim()
+    assert first_job is not None
+    put = storage.put
+
+    def fail_after_poster(path, key, content_type):
+        put(path, key, content_type)
+        if content_type == "image/jpeg":
+            raise OSError("Simulated storage failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "put", fail_after_poster)
+        process(first_job)
+    assert client.get(url).json()["state"] == "failed"
+    assert storage.size(first_job.source) == len(source)
+    for key in output_keys(first_job.video_id, first_job.attempt):
+        with pytest.raises(FileNotFoundError):
+            storage.size(key)
+
+    with TestClient(app) as other:
+        assert other.post(url + "/retry").status_code == 401
+        register(other, "other")
+        assign("other", "admin")
+        assert other.post(url + "/retry").status_code == 404
+    result = client.post(url + "/retry")
+    assert result.status_code == 202
+    assert result.json() == {"id": first_job.video_id, "state": "queued"}
+    assert client.post(url + "/retry").status_code == 409
+    second_job = claim()
+    assert second_job is not None
+    assert second_job.attempt != first_job.attempt
+    process(second_job)
+    assert client.get(url).json()["state"] == "ready"
+    assert client.get(url + "/media").status_code == 200
+
+
+def test_expired_worker_attempt_cannot_publish_and_is_cleaned(client, source, tmp_path):
+    register(client, "owner")
+    url = upload(client, source)
+    first_job = claim()
+    assert first_job is not None
+    assert claim() is None
+    old_media, old_poster = output_keys(first_job.video_id, first_job.attempt)
+    partial = tmp_path / "partial"
+    partial.write_bytes(b"partial output")
+    storage.put(partial, old_media, "video/mp4")
+    with Session.begin() as db:
+        db.get(Video, first_job.video_id).started = now() - 2 * LEASE
+    recovered_job = claim()
+    assert recovered_job is not None
+    assert recovered_job.abandoned_attempt == first_job.attempt
+    assert not finish(first_job.video_id, first_job.attempt, state="ready", media=old_media, poster=old_poster)
+    process(recovered_job)
+    with pytest.raises(FileNotFoundError):
+        storage.size(old_media)
+    assert client.get(url + "/poster").status_code == 200
+    with Session() as db:
+        poster = db.get(Video, first_job.video_id).poster
+    storage.remove(poster)
+    assert client.get(url + "/poster").status_code == 404

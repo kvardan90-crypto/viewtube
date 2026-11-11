@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -16,6 +16,14 @@ def new_id():
 
 engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
 Session = sessionmaker(engine, expire_on_commit=False)
+
+
+if engine.dialect.name == "sqlite":
+    @event.listens_for(engine, "connect")
+    def sqlite_unicode_lower(connection, _record):
+        # SQLite's built-in lower() only handles ASCII by default.
+        connection.create_function("lower", 1, lambda value: None if value is None else str(value).lower(),
+                                   deterministic=True)
 
 
 class Base(DeclarativeBase):

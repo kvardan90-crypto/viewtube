@@ -16,6 +16,8 @@ def client():
     return boto3.client(
         "s3", endpoint_url=os.getenv("S3_ENDPOINT"),
         region_name="us-east-1", config=Config(
+            connect_timeout=5, read_timeout=30,
+            retries={"mode": "standard", "total_max_attempts": 3},
             s3={"addressing_style": "path"},
             request_checksum_calculation="when_required",
             response_checksum_validation="when_required",
@@ -63,7 +65,12 @@ def remove(key):
 def size(key):
     if LOCAL:
         return (LOCAL / key).stat().st_size
-    return client().head_object(Bucket=BUCKET, Key=key)["ContentLength"]
+    try:
+        return client().head_object(Bucket=BUCKET, Key=key)["ContentLength"]
+    except ClientError as exc:
+        if exc.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+            raise FileNotFoundError(key) from exc
+        raise
 
 
 def stream(key, start, end):
