@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app import storage
-from app.db import Session, User, Video, now
+from app.db import Like, Session, User, Video, now
 from app.main import app
 from app.worker import LEASE, claim, finish, output_keys, process, run
 
@@ -90,6 +90,13 @@ def test_register_upload_play_like_comment(client, source):
     for _ in range(2):
         assert client.put(url + "/like", json={"enabled": True}).status_code == 200
     assert client.get(url).json()["likes"] == 1
+    for _ in range(2):
+        response = client.put(url + "/like", json={"enabled": False})
+        assert response.status_code == 200
+        assert response.json() == {"liked": False}
+        assert client.get(url).json()["likes"] == 0
+    with Session() as db:
+        assert db.scalar(select(Like).where(Like.video_id == detail["id"])) is None
     assert client.post(url + "/comments", json={"body": "<script>test</script>"}).status_code == 201
     assert client.get(url + "/comments").json()[0]["body"] == "<script>test</script>"
     old_token = client.cookies.get("viewtube_session")
