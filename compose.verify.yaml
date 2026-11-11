@@ -1,0 +1,15 @@
+services:
+  api:
+    ports: !reset []
+    environment:
+      SECURE_COOKIES: "0"
+
+  smoke:
+    image: viewtube-local:1
+    command: ["python", "scripts/smoke.py", "--url", "http://api:8000", "--wait", "180"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+    networks: [private]

@@ -26,7 +26,7 @@ services:
     volumes: [pgdata:/var/lib/postgresql/data]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U viewtube -d viewtube"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U viewtube -d viewtube"]
       interval: 3s
       timeout: 3s
       retries: 20

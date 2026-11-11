@@ -6,4 +6,8 @@
 !web/**
 !demo/
 !demo/contact-sheet.png
+!demo/videos/
+!demo/videos/*.mp4
+!scripts/
+!scripts/smoke.py
 **/__pycache__

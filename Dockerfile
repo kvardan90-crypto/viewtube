@@ -9,5 +9,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app app
 COPY web web
 COPY demo demo
+COPY scripts/smoke.py scripts/smoke.py
 USER 10001:10001
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "100"]

@@ -11,7 +11,16 @@ from .security import password_hash
 from .worker import run
 
 
-CONTACT_SHEET = Path(__file__).resolve().parents[1] / "demo" / "contact-sheet.png"
+DEMO = Path(__file__).resolve().parents[1] / "demo"
+CONTACT_SHEET = DEMO / "contact-sheet.png"
+PUBLIC_DOMAIN_CLIPS = (
+    ("orbit.mp4", "desk_lab", "Technology", "Ночная Земля с МКС",
+     "Рассвет над краем ночной Земли в кадре с Международной космической станции. Источник: NASA Johnson Space Center.", 18000),
+    ("gulf.mp4", "alpine", "Nature", "Рыба Мексиканского залива",
+     "Подводная съёмка экспедиции в Мексиканском заливе. Источник: NOAA Okeanos Explorer.", 9800),
+    ("geyser.mp4", "city_frame", "Travel", "Извержение гейзера Олд-Фейтфул",
+     "Извержение в Йеллоустонском национальном парке. Источник: National Park Service, Jacob W. Frank.", 23400),
+)
 CLIPS = (
     ("alpine", "Nature", "Альпийская тропа к озеру", "Прогулка по горной долине у подножия Альп.", 24000),
     ("desk_lab", "Technology", "Как собрать удобный рабочий стол", "Демо рабочего места с механической клавиатурой.", 15200),
@@ -23,6 +32,13 @@ CLIPS = (
     ("clay_studio", "Art", "Гончарный круг для начинающих", "Первые минуты работы с глиной.", 19100),
     ("alpine", "Nature", "Золотой час на берегу океана", "Свет над прибойной полосой.", 12300),
 )
+
+
+def demo_clips():
+    for index, (filename, *metadata) in enumerate(PUBLIC_DOMAIN_CLIPS):
+        yield len(CLIPS) + index, metadata, DEMO / "videos" / filename, timedelta(hours=index)
+    for index, metadata in enumerate(CLIPS):
+        yield index, metadata, None, timedelta(days=index * 3 + 1)
 
 
 def source_clip(index, output):
@@ -38,9 +54,10 @@ def seed():
     if not demo_password:
         raise RuntimeError("Set DEMO_PASSWORD before seeding")
     moderator_password = os.getenv("MODERATOR_PASSWORD", demo_password)
+    channels = {metadata[0] for _, metadata, _, _ in demo_clips()}
     with Session.begin() as db:
         users = {}
-        for handle in sorted({clip[0] for clip in CLIPS} | {"demo_viewer", "demo_mod"}):
+        for handle in sorted(channels | {"demo_viewer", "demo_mod"}):
             user = db.scalar(select(User).where(User.handle == handle))
             if not user:
                 role = "moderator" if handle == "demo_mod" else "user"
@@ -58,18 +75,19 @@ def seed():
         playlist_id = playlist.id
 
     with TemporaryDirectory() as work:
-        for index, (handle, category, title, description, views) in enumerate(CLIPS):
+        for index, (handle, category, title, description, views), source, age in demo_clips():
             video_id = f"demo{index:028d}"
             with Session() as db:
                 if db.get(Video, video_id):
                     continue
-            source = Path(work) / "clip.mp4"
-            source_clip(index, source)
+            if source is None:
+                source = Path(work) / "clip.mp4"
+                source_clip(index, source)
             key = f"sources/{video_id}"
             storage.put(source, key, "video/mp4")
             with Session.begin() as db:
                 db.add(Video(id=video_id, owner_id=users[handle], title=title, description=description,
-                             category=category, views=views, source=key, created=now() - timedelta(days=index * 3 + 1)))
+                             category=category, views=views, source=key, created=now() - age))
                 db.flush()
                 db.add(Comment(video_id=video_id, user_id=users["demo_viewer"], body="Спасибо за видео!"))
                 if handle == "alpine":
