@@ -13,7 +13,7 @@
   <a class="skip" href="#main">К содержимому</a>
   <header class="top">
     <div class="brand-group">
-      <button id="menu" class="icon-button" aria-label="Меню" aria-expanded="true"></button>
+      <button id="menu" class="icon-button" aria-label="Меню" aria-expanded="true" aria-controls="nav"></button>
       <a class="brand" href="#/" aria-label="ViewTube — главная"><span class="brand-mark"></span>ViewTube</a>
     </div>
     <form class="search" role="search" id="search">
@@ -22,6 +22,7 @@
     </form>
     <div class="top-actions" id="account"></div>
   </header>
+  <button type="button" id="nav-scrim" aria-label="Закрыть меню" tabindex="-1" hidden></button>
   <nav class="sidebar" id="nav" aria-label="Основное меню"></nav>
   <main id="main" tabindex="-1" aria-busy="true"><p class="notice">Загружаем видео…</p></main>
   <div id="toast" role="status" aria-live="polite"></div>
