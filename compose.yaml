@@ -1,0 +1,92 @@
+name: viewtube
+
+x-app: &app
+  image: viewtube-local:1
+  build: .
+  environment: &app-env
+    DATABASE_URL: postgresql+psycopg://viewtube:${POSTGRES_PASSWORD:?run bash deploy.sh}@postgres/viewtube
+    S3_ENDPOINT: http://objects:8333
+    S3_BUCKET: viewtube
+    AWS_ACCESS_KEY_ID: viewtube
+    AWS_SECRET_ACCESS_KEY: ${STORAGE_PASSWORD:?run bash deploy.sh}
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  read_only: true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=1536m,mode=1777
+  pids_limit: 128
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: viewtube
+      POSTGRES_DB: viewtube
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run bash deploy.sh}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U viewtube -d viewtube"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [private]
+
+  objects:
+    image: chrislusf/seaweedfs:4.48
+    command: ["mini", "-dir=/data", "-ip=objects", "-ip.bind=0.0.0.0"]
+    environment:
+      AWS_ACCESS_KEY_ID: viewtube
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_PASSWORD:?run bash deploy.sh}
+      S3_BUCKET: viewtube
+    volumes: [objects:/data]
+    restart: unless-stopped
+    networks: [private]
+
+  bootstrap:
+    <<: *app
+    command: ["python", "-m", "app.bootstrap", "--seed"]
+    environment:
+      <<: *app-env
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run bash deploy.sh}
+      MODERATOR_PASSWORD: ${MODERATOR_PASSWORD:?run bash deploy.sh}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?run bash deploy.sh}
+    depends_on:
+      postgres: {condition: service_healthy}
+      objects: {condition: service_started}
+    networks: [private]
+
+  api:
+    <<: *app
+    environment:
+      <<: *app-env
+      SECURE_COOKIES: ${SECURE_COOKIES:-0}
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT:-8000}:8000"]
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    networks: [edge, private]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/health', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    networks: [private]
+
+volumes:
+  pgdata:
+  objects:
+
+networks:
+  edge:
+  private:
+    internal: true

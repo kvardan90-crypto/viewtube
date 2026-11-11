@@ -1,0 +1,9 @@
+*
+!requirements.txt
+!app/
+!app/**
+!web/
+!web/**
+!demo/
+!demo/contact-sheet.png
+**/__pycache__
