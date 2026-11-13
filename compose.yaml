@@ -67,9 +67,10 @@ services:
       bootstrap: {condition: service_completed_successfully}
     networks: [edge, private]
     healthcheck:
-      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/health', timeout=2).close()"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=45).close()"]
+      interval: 15s
+      timeout: 60s
+      start_period: 120s
       retries: 10
 
   worker:

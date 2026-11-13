@@ -84,7 +84,7 @@ if "$verify"; then
     trap 'exit 143' TERM
     write_credentials >"$env_file"
     unset POSTGRES_PASSWORD STORAGE_PASSWORD ADMIN_PASSWORD MODERATOR_PASSWORD DEMO_PASSWORD
-    "${compose[@]}" up -d --build --wait --wait-timeout 360 api worker
+    "${compose[@]}" up -d --build --wait --wait-timeout 900 api worker
     "${compose[@]}" run --rm --no-deps smoke
     exit 0
 fi
@@ -96,7 +96,7 @@ if [[ ! -e .env ]]; then
     mv -n -- "$env_file" .env
 fi
 
-"${docker_cmd[@]}" compose up -d --build --wait --wait-timeout 360
+"${docker_cmd[@]}" compose up -d --build --wait --wait-timeout 900
 "${docker_cmd[@]}" compose port api 8000
 echo 'Demo viewer: demo_viewer / DEMO_PASSWORD (from .env)'
 echo 'Moderator: demo_mod / MODERATOR_PASSWORD (from .env)'

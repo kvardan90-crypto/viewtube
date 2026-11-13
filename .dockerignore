@@ -5,7 +5,8 @@
 !web/
 !web/**
 !demo/
-!demo/contact-sheet.png
+!demo/animated/
+!demo/animated/*.mp4
 !demo/videos/
 !demo/videos/*.mp4
 !scripts/
